@@ -1,7 +1,6 @@
 [[webflux]]
 :chapter: webflux
 = Spring WebFlux
-:doc-spring-security: {doc-root}/spring-security/reference
 
 The original web framework included in the Spring Framework, Spring Web MVC, was
 purpose-built for the Servlet API and Servlet containers. The reactive-stack web framework,
@@ -388,14 +387,14 @@ The code snippets below show using the `HttpHandler` adapters with each server A
 ----
 	HttpHandler handler = ...
 	ReactorHttpHandlerAdapter adapter = new ReactorHttpHandlerAdapter(handler);
-	HttpServer.create().host(host).port(port).handle(adapter).bind().block();
+	HttpServer.create().host(host).port(port).handle(adapter).bindNow();
 ----
 [source,kotlin,indent=0,subs="verbatim,quotes",role="secondary"]
 .Kotlin
 ----
 	val handler: HttpHandler = ...
 	val adapter = ReactorHttpHandlerAdapter(handler)
-	HttpServer.create().host(host).port(port).handle(adapter).bind().block()
+	HttpServer.create().host(host).port(port).handle(adapter).bindNow()
 ----
 
 *Undertow*
@@ -1168,19 +1167,17 @@ as a `HandlerResult`, along with some additional context, and passed to the firs
 === Exceptions
 [.small]#<<web.adoc#mvc-exceptionhandlers, Web MVC>>#
 
-The `HandlerResult` returned from a `HandlerAdapter` can expose a function for error
-handling based on some handler-specific mechanism. This error function is called if:
+`HandlerAdapter` implementations can handle internally exceptions from invoking a request
+handler, such as a controller method. However, an exception may be deferred if the request
+handler returns an asynchronous value.
 
-* The handler (for example, `@Controller`) invocation fails.
-* The handling of the handler return value through a `HandlerResultHandler` fails.
+A `HandlerAdapter` may expose its exception handling mechanism as a
+`DispatchExceptionHandler` set on the `HandlerResult` it returns. When that's set,
+`DispatcherHandler` will also apply it to the handling of the result.
 
-The error function can change the response (for example, to an error status), as long as an error
-signal occurs before the reactive type returned from the handler produces any data items.
-
-This is how `@ExceptionHandler` methods in `@Controller` classes are supported.
-By contrast, support for the same in Spring MVC is built on a `HandlerExceptionResolver`.
-This generally should not matter. However, keep in mind that, in WebFlux, you cannot use a
-`@ControllerAdvice` to handle exceptions that occur before a handler is chosen.
+A `HandlerAdapter` may also choose to implement `DispatchExceptionHandler`. Inn that case
+`DispatcherHandler` will apply it to exceptions that arise before a handler is mapped,
+e.g. during handler mapping, or earlier, e.g. in a `WebFilter`.
 
 See also <<webflux-ann-controller-exceptions>> in the "`Annotated Controller`" section or
 <<webflux-exception-handler>> in the WebHandler API section.
@@ -1477,6 +1474,7 @@ You can map requests by using glob patterns and wildcards:
 
 Captured URI variables can be accessed with `@PathVariable`, as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -1493,9 +1491,11 @@ Captured URI variables can be accessed with `@PathVariable`, as the following ex
 		// ...
 	}
 ----
+--
 
 You can declare URI variables at the class and method levels, as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -1527,6 +1527,7 @@ You can declare URI variables at the class and method levels, as the following e
 ----
 <1> Class-level URI mapping.
 <2> Method-level URI mapping.
+--
 
 
 URI variables are automatically converted to the appropriate type or a `TypeMismatchException`
@@ -1535,8 +1536,8 @@ register support for any other data type.
 See <<webflux-ann-typeconversion>> and <<webflux-ann-initbinder>>.
 
 URI variables can be named explicitly (for example, `@PathVariable("customId")`), but you can
-leave that detail out if the names are the same and you compile your code with debugging
-information or with the `-parameters` compiler flag on Java 8.
+leave that detail out if the names are the same and you compile your code with the `-parameters`
+compiler flag.
 
 The syntax `{*varName}` declares a URI variable that matches zero or more remaining path
 segments. For example `/resources/{*path}` matches all files under `/resources/`, and the
@@ -1546,6 +1547,7 @@ The syntax `{varName:regex}` declares a URI variable with a regular expression t
 syntax: `{varName:regex}`. For example, given a URL of `/spring-web-3.0.5.jar`, the following method
 extracts the name, version, and file extension:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -1562,10 +1564,11 @@ extracts the name, version, and file extension:
 		// ...
 	}
 ----
+--
 
 URI path patterns can also have embedded `${...}` placeholders that are resolved on startup
 through `PropertySourcesPlaceholderConfigurer` against local, system, environment, and
-other property sources. You ca use this to, for example, parameterize a base URL based on
+other property sources. You can use this to, for example, parameterize a base URL based on
 some external configuration.
 
 NOTE: Spring WebFlux uses `PathPattern` and the `PathPatternParser` for URI path matching support.
@@ -2007,7 +2010,7 @@ generally supported for all return values.
   value) is considered to have fully handled the response if it also has a `ServerHttpResponse`,
   a `ServerWebExchange` argument, or an `@ResponseStatus` annotation. The same is also true
   if the controller has made a positive ETag or `lastModified` timestamp check.
-  // TODO: See <<webflux-caching-etag-lastmodified>> for details.
+  See <<webflux-caching-etag-lastmodified>> for details.
 
   If none of the above is true, a `void` return type can also indicate "`no response body`" for
   REST controllers or default view name selection for HTML controllers.
@@ -2017,10 +2020,9 @@ generally supported for all return values.
   to be written (however, `text/event-stream` must be requested or declared in the mapping
   through the `produces` attribute).
 
-| Any other return value
-| If a return value is not matched to any of the above, it is, by default, treated as a view
-  name, if it is `String` or `void` (default view name selection applies), or as a model
-  attribute to be added to the model, unless it is a simple type, as determined by
+| Other return values
+| If a return value remains unresolved in any other way, it is treated as a model
+  attribute, unless it is a simple type as determined by
   {api-spring-framework}/beans/BeanUtils.html#isSimpleProperty-java.lang.Class-[BeanUtils#isSimpleProperty],
   in which case it remains unresolved.
 |===
@@ -2664,6 +2666,7 @@ content. The best way to handle a file upload form (for example, from a browser)
 is through data binding to a <<webflux-ann-modelattrib-method-args, command object>>,
 as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -2704,6 +2707,7 @@ as the following example shows:
 
 	}
 ----
+--
 
 You can also submit multipart requests from non-browser clients in a RESTful service
 scenario. The following example uses a file along with JSON:
@@ -2730,6 +2734,7 @@ Content-Transfer-Encoding: 8bit
 
 You can access individual parts with `@RequestPart`, as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -2753,11 +2758,13 @@ You can access individual parts with `@RequestPart`, as the following example sh
 ----
 <1> Using `@RequestPart` to get the metadata.
 <2> Using `@RequestPart` to get the file.
+--
 
 
 To deserialize the raw part content (for example, to JSON -- similar to `@RequestBody`),
 you can declare a concrete target `Object`, instead of `Part`, as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -2777,6 +2784,7 @@ you can declare a concrete target `Object`, instead of `Part`, as the following 
 	}
 ----
 <1> Using `@RequestPart` to get the metadata.
+--
 
 You can use `@RequestPart` in combination with `jakarta.validation.Valid` or Spring's
 `@Validated` annotation, which causes Standard Bean Validation to be applied. Validation
@@ -2785,6 +2793,7 @@ The exception contains a `BindingResult` with the error details and can also be 
 in the controller method by declaring the argument with an async wrapper and then using
 error related operators:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -2802,10 +2811,12 @@ error related operators:
 		// ...
 	}
 ----
+--
 
 To access all multipart data as a `MultiValueMap`, you can use `@RequestBody`,
 as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -2825,6 +2836,7 @@ as the following example shows:
 	}
 ----
 <1> Using `@RequestBody`.
+--
 
 ===== `PartEvent`
 
@@ -3351,6 +3363,7 @@ do, except for `@ModelAttribute` (command object) arguments. Typically, they are
 with a `WebDataBinder` argument, for registrations, and a `void` return value.
 The following example uses the `@InitBinder` annotation:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -3385,11 +3398,14 @@ The following example uses the `@InitBinder` annotation:
 		// ...
 	}
 ----
+<1> Using the `@InitBinder` annotation.
+--
 
 Alternatively, when using a `Formatter`-based setup through a shared
 `FormattingConversionService`, you could re-use the same approach and register
 controller-specific `Formatter` instances, as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -3421,6 +3437,8 @@ controller-specific `Formatter` instances, as the following example shows:
 	}
 ----
 <1> Adding a custom formatter (a `DateFormatter`, in this case).
+--
+
 
 [[webflux-ann-initbinder-model-design]]
 ==== Model Design
@@ -3746,10 +3764,10 @@ The https://spring.io/projects/spring-security[Spring Security] project provides
 for protecting web applications from malicious exploits. See the Spring Security
 reference documentation, including:
 
-* {doc-spring-security}/reactive/configuration/webflux.html[WebFlux Security]
-* {doc-spring-security}/reactive/test/index.html[WebFlux Testing Support]
-* {doc-spring-security}/features/exploits/csrf.html#csrf-protection[CSRF protection]
-* {doc-spring-security}/features/exploits/headers.html[Security Response Headers]
+* {docs-spring-security}/reactive/configuration/webflux.html[WebFlux Security]
+* {docs-spring-security}/reactive/test/index.html[WebFlux Testing Support]
+* {docs-spring-security}/features/exploits/csrf.html#csrf-protection[CSRF protection]
+* {docs-spring-security}/features/exploits/headers.html[Security Response Headers]
 
 
 
@@ -3827,6 +3845,7 @@ Controllers can add explicit support for HTTP caching. We recommend doing so, si
 against conditional request headers. A controller can add an `ETag` and `Cache-Control`
 settings to a `ResponseEntity`, as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -3860,6 +3879,7 @@ settings to a `ResponseEntity`, as the following example shows:
 				.body(book)
 	}
 ----
+--
 
 The preceding example sends a 304 (NOT_MODIFIED) response with an empty body if the comparison
 to the conditional request headers indicates the content has not changed. Otherwise, the
@@ -3868,6 +3888,7 @@ to the conditional request headers indicates the content has not changed. Otherw
 You can also make the check against conditional request headers in the controller,
 as the following example shows:
 
+--
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
 .Java
 ----
@@ -3907,6 +3928,7 @@ as the following example shows:
 <1> Application-specific calculation.
 <2> Response has been set to 304 (NOT_MODIFIED). No further processing.
 <3> Continue with request processing.
+--
 
 There are three variants for checking conditional requests against `eTag` values, `lastModified`
 values, or both. For conditional `GET` and `HEAD` requests, you can set the response to
@@ -4412,7 +4434,7 @@ In the next example, given a request that starts with `/resources`, the relative
 used to find and serve static resources relative to `/static` on the classpath. Resources
 are served with a one-year future expiration to ensure maximum use of the browser cache
 and a reduction in HTTP requests made by the browser. The `Last-Modified` header is also
-evaluated and, if present, a `304` status code is returned. The following list shows
+evaluated and, if present, a `304` status code is returned. The following listing shows
 the example:
 
 [source,java,indent=0,subs="verbatim,quotes",role="primary"]
@@ -4446,7 +4468,7 @@ the example:
 	}
 ----
 
-// TODO: See also <<webflux-caching-static-resources, HTTP caching support for static resources>>.
+See also <<webflux-caching-static-resources, HTTP caching support for static resources>>.
 
 The resource handler also supports a chain of
 {api-spring-framework}/web/reactive/resource/ResourceResolver.html[`ResourceResolver`] implementations and

@@ -33,8 +33,8 @@ import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.observation.ServerRequestObservationContext;
 import org.springframework.http.server.RequestPath;
+import org.springframework.http.server.observation.ServerRequestObservationContext;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.MultiValueMap;
@@ -364,12 +364,12 @@ class RequestMappingInfoHandlerMappingTests {
 
 		assertThat(matrixVariables).isNotNull();
 		if (mapping.getPatternParser() != null) {
-			assertThat(matrixVariables.size()).isEqualTo(1);
+			assertThat(matrixVariables).hasSize(1);
 			assertThat(matrixVariables.getFirst("b")).isEqualTo("c");
 			assertThat(uriVariables.get("foo")).isEqualTo("a=42");
 		}
 		else {
-			assertThat(matrixVariables.size()).isEqualTo(2);
+			assertThat(matrixVariables).hasSize(2);
 			assertThat(matrixVariables.getFirst("a")).isEqualTo("42");
 			assertThat(matrixVariables.getFirst("b")).isEqualTo("c");
 			assertThat(uriVariables.get("foo")).isEqualTo("a=42");

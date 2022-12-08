@@ -96,6 +96,11 @@ public abstract class ResponseEntityExceptionHandler implements MessageSourceAwa
 		this.messageSource = messageSource;
 	}
 
+	@Nullable
+	protected MessageSource getMessageSource() {
+		return this.messageSource;
+	}
+
 
 	/**
 	 * Handle all exceptions raised within Spring MVC handling of the request .
@@ -508,10 +513,14 @@ public abstract class ResponseEntityExceptionHandler implements MessageSourceAwa
 			Exception ex, HttpStatusCode status, String defaultDetail, @Nullable String detailMessageCode,
 			@Nullable Object[] detailMessageArguments, WebRequest request) {
 
-		ErrorResponse errorResponse = ErrorResponse.createFor(
-				ex, status, null, defaultDetail, detailMessageCode, detailMessageArguments);
-
-		return errorResponse.updateAndGetBody(this.messageSource, LocaleContextHolder.getLocale());
+		ErrorResponse.Builder builder = ErrorResponse.builder(ex, status, defaultDetail);
+		if (detailMessageCode != null) {
+			builder.detailMessageCode(detailMessageCode);
+		}
+		if (detailMessageArguments != null) {
+			builder.detailMessageArguments(detailMessageArguments);
+		}
+		return builder.build().updateAndGetBody(this.messageSource, LocaleContextHolder.getLocale());
 	}
 
 	/**
